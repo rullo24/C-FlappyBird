@@ -32,92 +32,132 @@ void change_bird_position(flappy_obj *p_flappy_bird, int game_window_height, boo
 }
 
 // Creating a pipe off the right side of the screen to be brought in
-void *create_pipe(int game_window_width, SDL_Texture *p_up_pipe_texture, SDL_Texture *p_down_pipe_texture, pipe_obj **p_pipe_ptr_arr, int *p_current_num_pipes) {
-    if(*p_current_num_pipes >= MAX_NUM_PIPES) {
-        fprintf(stderr, "\nERROR: Tried to add one too many pipes");
-        return NULL;
-    }
-
+pipe_obj *create_pipe(int game_window_width, int game_window_height) { 
     pipe_obj *p_pipe = malloc(sizeof(pipe_obj)); // Allocating the memory for the pipe
     if(p_pipe == NULL) {
         fprintf(stderr, "\nERROR: Failed to assign memory for a pipe");
-        return NULL;
-    }
-
-    p_pipe->f_loc_x = game_window_width; // Start off the screen
-    p_pipe->f_loc_y_mid = 100; // Random number to assigned --> Needs to be randomised
-    p_pipe->size_x = 50 * WINDOW_SCALE;
-    p_pipe->size_y = 50 * WINDOW_SCALE; // Temporary value --> To be dynamically changed based on rand choice
-    p_pipe->p_up_pipe_texture = p_up_pipe_texture;
-    p_pipe->p_down_pipe_texture = p_down_pipe_texture;
-    // NOTE: p_pipe_pipe_dimensions set dynamically when moving the pipe
-
-    for(int pipe_index=0; pipe_index < MAX_NUM_PIPES; pipe_index++) {
-        if(p_pipe_ptr_arr[pipe_index] != NULL) {
-            continue; // Move along if occupied
-        }
-        p_pipe->pipe_arr_index = pipe_index;
-        p_pipe_ptr_arr[pipe_index] = p_pipe; // Setting the available array location to the newly formed pointer
-    }
-
-    *p_current_num_pipes += 1;
-
-    return p_pipe;
-}
-
-// Destory the memory allocated to a pipe
-bool destroy_pipe(pipe_obj *p_pipe, pipe_obj **p_pipe_ptr_arr, int *p_current_num_pipes) {
-    if(p_pipe == NULL) {
-        fprintf(stderr, "\nERROR: Tried to destroy a memoryless pipe");
         return false;
     }
-    p_pipe_ptr_arr[p_pipe->pipe_arr_index] = NULL;
 
-    *p_current_num_pipes -= 1;
-    free(p_pipe);
+    // Performing necessary pre-calculations
+    float screen_midpoint = game_window_height/2; // Random number assigned on initial move --> Start in the centre of the screen
 
-    return true;
+    p_pipe->f_loc_x = game_window_width; // Start off the screen
+    p_pipe->size_x = 50 * WINDOW_SCALE;
+
+    // Calculating the size of the pipe textures
+    p_pipe->size_y_top = game_window_height - screen_midpoint - ((PIXEL_SPACE_BETWEEN_PIPES)/2);
+    p_pipe->size_y_bottom = game_window_height - screen_midpoint - ((PIXEL_SPACE_BETWEEN_PIPES)/2);
+
+    // Calculating the starting pos of the pipe textures
+    p_pipe->f_loc_y_top = 0; // Texture starts at 0
+    p_pipe->f_loc_y_bottom = game_window_height - p_pipe->size_y_bottom; // Texture starts at the bottom border (game_window_height) --> Goes to just below midpoint
+
+    // Formatting the two pipe locations on the screen (y dir)
+    SDL_Rect top_pipe_dimensions = {p_pipe->f_loc_x, p_pipe->f_loc_y_top, p_pipe->size_x, p_pipe->size_y_top}; // {x_start, y_start, x_size, y_size}
+    SDL_Rect bottom_pipe_dimensions = {p_pipe->f_loc_x, p_pipe->f_loc_y_bottom, p_pipe->size_x, p_pipe->size_y_bottom}; // {x_start, y_start, x_size, y_size}
+    p_pipe->pipe_dimensions_top = top_pipe_dimensions;
+    p_pipe->pipe_dimensions_bottom = bottom_pipe_dimensions;
+
+    // Setting pipe use to start as false --> This is changed when the pipe starts moving
+    p_pipe->in_use = false;
+
+    return p_pipe; // Returning malloc'd memory pointer
 }
 
-// Changing the positioning of a pipe --> Returns: -1=ERROR; 0=SUCCESS; 1=DestroyedPipe
-int change_pipe_position(pipe_obj *p_pipe, pipe_obj **p_pipe_ptr_arr, int *p_current_num_pipes) {
-    if(p_pipe == NULL) {
-        fprintf(stderr, "\nERROR: Tried to change the position of a non-existent pipe");
-        return -1;
-    }
-
-    // Checking if the pipe has moved completed out of view --> despawn
-    if(((float)p_pipe->f_loc_x) <= (0 - p_pipe->size_x)) { 
-        bool destroy_result = destroy_pipe(p_pipe, p_pipe_ptr_arr, p_current_num_pipes); // Destroying the pipe's memory --> Should not be a failed pipe
-        if(destroy_result == false) {
-            fprintf(stderr, "\nERROR: Failed to destroy the pipe as it DNE");
-            return -1;
+// Destory the memory allocated to a pipe --> Works on p_pipe so that it is a specific destroy
+void destroy_pipes(pipe_obj **p_pipe_ptr_arr, int p_pipe_arr_size) {
+    // O(N) destroying each pipe --> To be called at the end of the program run   
+    for(int index=0; index<p_pipe_arr_size; index++) {
+        if(p_pipe_ptr_arr[index] != NULL) {
+            free(p_pipe_ptr_arr[index]);
+        } else {
+            fprintf(stderr, "\nERROR: One of the pipe array indexes is a NULL value.");
         }
-        return 1; // Destroy pipe
+    }
+}
+
+// Changing the positioning of all active pipes 
+void change_pipe_positions(pipe_obj **p_pipe_ptr_arr, int p_pipe_arr_size, int game_window_width) {
+    // Iterating over each pipe in the pipe array
+    for(int index=0; index<p_pipe_arr_size; index++) {
+        pipe_obj *current_pipe = p_pipe_ptr_arr[index]; // Alias for simplicities sake
+        if(current_pipe == NULL) { // Checking for NULL pointers before utilising --> This should never happen following the game logic
+            fprintf(stderr, "\nERROR: A NULL pointer was found in the pipe array");
+            continue;
+        }
+
+        // Checking if the current pipe should be moved (in use)
+        if(current_pipe->in_use == true) {
+            // Checking if the pipe has moved completed out of view --> Move it to the start and set it to "not in use"
+            if(((float)current_pipe->f_loc_x) <= (0 - current_pipe->size_x)) { // Current pipe moved out of view
+                current_pipe->f_loc_x = game_window_width; // Move obj to off the screen on the right
+                current_pipe->in_use = false; // Setting it to a static state (until called again)
+            } else {
+                // Calculating new position of the pipe obj --> Considering speed
+                float pipe_x_speed = PIPE_STARTING_SPEED * WINDOW_SCALE;
+                current_pipe->f_loc_x += pipe_x_speed; // Shifting the pipe ever so slightly
+
+                // Updating the location of the two subpipes within the pipe obj
+                SDL_Rect top_pipe_dimensions = {current_pipe->f_loc_x, current_pipe->f_loc_y_top, current_pipe->size_x, current_pipe->size_y_top}; 
+                current_pipe->pipe_dimensions_top = top_pipe_dimensions; // Updating the top pipe dimensions
+                SDL_Rect bottom_pipe_dimensions = {current_pipe->f_loc_x, current_pipe->f_loc_y_bottom, current_pipe->size_x, current_pipe->size_y_bottom}; 
+                current_pipe->pipe_dimensions_bottom = bottom_pipe_dimensions; // Updating the bottom pipe dimensions
+            }
+        }
     }
 
-    float pipe_x_speed = PIPE_STARTING_SPEED * WINDOW_SCALE;
-    p_pipe->f_loc_x += pipe_x_speed; // Shifting the pipe ever so slightly
-
-    SDL_Rect local_pipe_dimensions = {p_pipe->f_loc_x, p_pipe->f_loc_y_mid, p_pipe->size_x, p_pipe->size_y}; // Creating the SDL dimensions for texture print
-    p_pipe->pipe_dimensions = local_pipe_dimensions;
-
-    return 0;
+    return;
 }
 
 // Rendering the pipe(s)
-bool render_pipes(SDL_Renderer *p_renderer, pipe_obj **p_pipe_ptr_arr, int num_arr_elements, SDL_Texture *p_texture) {
-    // int size_of_pipe_obj_ptr = sizeof(pipe_obj*);
+bool render_pipes(SDL_Renderer *p_renderer, pipe_obj **p_pipe_ptr_arr, SDL_Texture *p_up_pipe_texture, SDL_Texture *p_down_pipe_texture, int pipe_arr_size) {
+    // Checking if the provided textures are non-NULL pointers
+    if(p_up_pipe_texture == NULL || p_down_pipe_texture == NULL) {
+        fprintf(stderr, "\nERROR: Parsed a NULL pointer as a pipe texture to render_pipes");
+        return false;
+    }
 
-    for(int pipe_index=0; pipe_index < num_arr_elements; pipe_index++) {
-        if(p_pipe_ptr_arr[pipe_index] == NULL) {
+    // Iterating through the pipe array and re-rendering each pipe --> This also re-renders pipes that are not in-use (off the screen)
+    for(int pipe_index=0; pipe_index < pipe_arr_size; pipe_index++) {
+        pipe_obj *current_pipe = p_pipe_ptr_arr[pipe_index]; // Setting an alias for the current pipe in the iteration
+
+        // Checking for NULL pointer --> This should never happen according to game logic
+        if(current_pipe == NULL) { 
+            fprintf(stderr, "\nERROR: A NULL pointer was found when trying to render all pipes within the pipe array.");
             continue; // Skip NULL pointers
         }
 
-        SDL_RenderCopy(p_renderer, p_texture, NULL, &(p_pipe_ptr_arr[pipe_index]->pipe_dimensions));
+        // Re-rendering each pipe in the array 
+        SDL_RenderCopy(p_renderer, p_down_pipe_texture, NULL, &(current_pipe->pipe_dimensions_top)); // Rendering the top subpipe
+        SDL_RenderCopy(p_renderer, p_up_pipe_texture, NULL, &(current_pipe->pipe_dimensions_bottom)); // Rendering the bottom subpipe
     }
 
     return true;
+}
+
+// Randomly picking a y location for the pipe that is passed
+void randomise_pipe_loc_y(pipe_obj *p_pipe, int game_window_height) {
+
+    // Calculating a random number between the two provided limits --> This will act as the midpoint of the new pipe y location
+    int pipe_spawn_gap_from_borders = PIXEL_SPACE_BETWEEN_PIPES + 10; 
+    int lower_limit = 0 + pipe_spawn_gap_from_borders;
+    int upper_limit = game_window_height - pipe_spawn_gap_from_borders;
+    int range_bound_random_num = (rand() % (upper_limit - lower_limit + 1)) + lower_limit; 
+    
+    // Updating the dimensions for top subpipe
+    p_pipe->size_y_top = range_bound_random_num - ((PIXEL_SPACE_BETWEEN_PIPES)/2);
+    p_pipe->f_loc_y_top = 0; // Texture starts at 0
+    SDL_Rect top_pipe_dimensions = {p_pipe->f_loc_x, p_pipe->f_loc_y_top, p_pipe->size_x, p_pipe->size_y_top}; // {x_start, y_start, x_size, y_size}
+    p_pipe->pipe_dimensions_top = top_pipe_dimensions;
+
+    // Updating the dimensions for bottom subpipe
+    p_pipe->size_y_bottom = game_window_height - p_pipe->size_y_top - (PIXEL_SPACE_BETWEEN_PIPES); // Basing bottom on size of top portion
+    p_pipe->f_loc_y_bottom = game_window_height - p_pipe->size_y_bottom; // Texture starts at the bottom border (game_window_height) --> Goes to just below midpoint
+
+    SDL_Rect bottom_pipe_dimensions = {p_pipe->f_loc_x, p_pipe->f_loc_y_bottom, p_pipe->size_x, p_pipe->size_y_bottom}; // {x_start, y_start, x_size, y_size}
+    p_pipe->pipe_dimensions_bottom = bottom_pipe_dimensions;
+
 }
 
 // Checking for an SDL event and acting on it --> Keypress
@@ -139,3 +179,34 @@ void handle_keypress_in_game(SDL_Event *p_event, bool *p_running_flag, struct fl
         }
     }
 }
+
+// Collision detection function
+bool simple_check_collision(SDL_Rect a, SDL_Rect b) {
+    if (a.x + a.w <= b.x) return false;
+    if (a.x >= b.x + b.w) return false;
+    if (a.y + a.h <= b.y) return false;
+    if (a.y >= b.y + b.h) return false;
+    return true;
+}
+
+bool check_bird_pipe_collision(flappy_obj *p_flappy, pipe_obj **pipe_ptr_arr, int pipe_arr_size) {
+    // Checking that the dimensions of each available pipe and flappy don't overlap --> Only checking those that are "in-use"
+    for(int index=0; index<pipe_arr_size; index++) {
+        pipe_obj *current_pipe = pipe_ptr_arr[index];
+        if(current_pipe->in_use) { // Only accessing the pipe if its currently being used in the game
+            bool top_pipe_collision_result = simple_check_collision(p_flappy->flappy_dimensions, current_pipe->pipe_dimensions_top); 
+            bool bottom_pipe_collision_result = simple_check_collision(p_flappy->flappy_dimensions, current_pipe->pipe_dimensions_bottom);
+
+            // Checking the results of the collision checks
+            if(top_pipe_collision_result || bottom_pipe_collision_result) {
+                return true; // A collision was found
+            }
+        }
+    }
+    return false; // Did not find a collision
+}
+
+
+
+
+
