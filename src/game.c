@@ -1,7 +1,7 @@
 #include "game.h"
 
 // Looping the game starting screen until the space bar is pressed
-void pre_start_waiting_screen_render_loop(SDL_Renderer *renderer, bool *p_running_flag, SDL_Event *p_event, struct flappy_obj *p_flappy_bird, SDL_Texture *flappy_texture, SDL_Texture *background_texture) {
+void pre_start_waiting_screen_render_loop(SDL_Renderer *renderer, bool *p_running_flag, SDL_Event *p_event, FLAPPY_OBJ *p_flappy_bird, SDL_Texture *flappy_texture, SDL_Texture *background_texture) {
     SDL_RenderCopy(renderer, background_texture, NULL, NULL); // Rendering the game's background
     SDL_Rect flappy_hitbox = {p_flappy_bird->loc_x, p_flappy_bird->loc_y, p_flappy_bird->size_x, p_flappy_bird->size_y};
     SDL_RenderCopy(renderer, flappy_texture, NULL, &flappy_hitbox); // Rendering the bird 
@@ -19,7 +19,7 @@ void pre_start_waiting_screen_render_loop(SDL_Renderer *renderer, bool *p_runnin
 }
 
 // Changing the positioning of the bird 
-void change_bird_position(flappy_obj *p_flappy_bird, int game_window_height, bool *p_running_flag) {
+void change_bird_position(FLAPPY_OBJ *p_flappy_bird, int game_window_height, bool *p_running_flag) {
     float current_y_change = p_flappy_bird->velocity_ms_y * (int)WINDOW_SCALE; // Moving the bird position based on current velocity
     if(((float)p_flappy_bird->loc_y + current_y_change) >= (game_window_height - p_flappy_bird->size_y)) { // Bird hit the floor --> Game ends
         *p_running_flag = false; 
@@ -32,8 +32,8 @@ void change_bird_position(flappy_obj *p_flappy_bird, int game_window_height, boo
 }
 
 // Creating a pipe off the right side of the screen to be brought in
-pipe_obj *create_pipe(int game_window_width, int game_window_height) { 
-    pipe_obj *p_pipe = malloc(sizeof(pipe_obj)); // Allocating the memory for the pipe
+PIPE_OBJ *create_pipe(int game_window_width, int game_window_height) { 
+    PIPE_OBJ *p_pipe = malloc(sizeof(PIPE_OBJ)); // Allocating the memory for the pipe
     if(p_pipe == NULL) {
         fprintf(stderr, "\nERROR: Failed to assign memory for a pipe");
         return false;
@@ -66,7 +66,7 @@ pipe_obj *create_pipe(int game_window_width, int game_window_height) {
 }
 
 // Destory the memory allocated to a pipe --> Works on p_pipe so that it is a specific destroy
-void destroy_pipes(pipe_obj **p_pipe_ptr_arr, int p_pipe_arr_size) {
+void destroy_pipes(PIPE_OBJ **p_pipe_ptr_arr, int p_pipe_arr_size) {
     // O(N) destroying each pipe --> To be called at the end of the program run   
     for(int index=0; index<p_pipe_arr_size; index++) {
         if(p_pipe_ptr_arr[index] != NULL) {
@@ -78,10 +78,10 @@ void destroy_pipes(pipe_obj **p_pipe_ptr_arr, int p_pipe_arr_size) {
 }
 
 // Changing the positioning of all active pipes 
-void change_pipe_positions(pipe_obj **p_pipe_ptr_arr, int p_pipe_arr_size, int game_window_width) {
+void change_pipe_positions(PIPE_OBJ **p_pipe_ptr_arr, int p_pipe_arr_size, int game_window_width) {
     // Iterating over each pipe in the pipe array
     for(int index=0; index<p_pipe_arr_size; index++) {
-        pipe_obj *current_pipe = p_pipe_ptr_arr[index]; // Alias for simplicities sake
+        PIPE_OBJ *current_pipe = p_pipe_ptr_arr[index]; // Alias for simplicities sake
         if(current_pipe == NULL) { // Checking for NULL pointers before utilising --> This should never happen following the game logic
             fprintf(stderr, "\nERROR: A NULL pointer was found in the pipe array");
             continue;
@@ -93,6 +93,7 @@ void change_pipe_positions(pipe_obj **p_pipe_ptr_arr, int p_pipe_arr_size, int g
             if(((float)current_pipe->f_loc_x) <= (0 - current_pipe->size_x)) { // Current pipe moved out of view
                 current_pipe->f_loc_x = game_window_width; // Move obj to off the screen on the right
                 current_pipe->in_use = false; // Setting it to a static state (until called again)
+                current_pipe->point_given = false; // Allowing the pipe to give points in future moves
             } else {
                 // Calculating new position of the pipe obj --> Considering speed
                 float pipe_x_speed = PIPE_STARTING_SPEED * WINDOW_SCALE;
@@ -111,7 +112,7 @@ void change_pipe_positions(pipe_obj **p_pipe_ptr_arr, int p_pipe_arr_size, int g
 }
 
 // Rendering the pipe(s)
-bool render_pipes(SDL_Renderer *p_renderer, pipe_obj **p_pipe_ptr_arr, SDL_Texture *p_up_pipe_texture, SDL_Texture *p_down_pipe_texture, int pipe_arr_size) {
+bool render_pipes(SDL_Renderer *p_renderer, PIPE_OBJ **p_pipe_ptr_arr, SDL_Texture *p_up_pipe_texture, SDL_Texture *p_down_pipe_texture, int pipe_arr_size) {
     // Checking if the provided textures are non-NULL pointers
     if(p_up_pipe_texture == NULL || p_down_pipe_texture == NULL) {
         fprintf(stderr, "\nERROR: Parsed a NULL pointer as a pipe texture to render_pipes");
@@ -120,7 +121,7 @@ bool render_pipes(SDL_Renderer *p_renderer, pipe_obj **p_pipe_ptr_arr, SDL_Textu
 
     // Iterating through the pipe array and re-rendering each pipe --> This also re-renders pipes that are not in-use (off the screen)
     for(int pipe_index=0; pipe_index < pipe_arr_size; pipe_index++) {
-        pipe_obj *current_pipe = p_pipe_ptr_arr[pipe_index]; // Setting an alias for the current pipe in the iteration
+        PIPE_OBJ *current_pipe = p_pipe_ptr_arr[pipe_index]; // Setting an alias for the current pipe in the iteration
 
         // Checking for NULL pointer --> This should never happen according to game logic
         if(current_pipe == NULL) { 
@@ -137,7 +138,7 @@ bool render_pipes(SDL_Renderer *p_renderer, pipe_obj **p_pipe_ptr_arr, SDL_Textu
 }
 
 // Randomly picking a y location for the pipe that is passed
-void randomise_pipe_loc_y(pipe_obj *p_pipe, int game_window_height) {
+void randomise_pipe_loc_y(PIPE_OBJ *p_pipe, int game_window_height) {
 
     // Calculating a random number between the two provided limits --> This will act as the midpoint of the new pipe y location
     int pipe_spawn_gap_from_borders = PIXEL_SPACE_BETWEEN_PIPES + 10; 
@@ -161,7 +162,7 @@ void randomise_pipe_loc_y(pipe_obj *p_pipe, int game_window_height) {
 }
 
 // Checking for an SDL event and acting on it --> Keypress
-void handle_keypress_in_game(SDL_Event *p_event, bool *p_running_flag, struct flappy_obj *p_flappy_bird) {
+void handle_keypress_in_game(SDL_Event *p_event, bool *p_running_flag, FLAPPY_OBJ *p_flappy_bird) {
     if(SDL_PollEvent(p_event)) {
         // Reacting to a window close function call
         if(p_event->type == SDL_QUIT) { 
@@ -189,10 +190,11 @@ bool simple_check_collision(SDL_Rect a, SDL_Rect b) {
     return true;
 }
 
-bool check_bird_pipe_collision(flappy_obj *p_flappy, pipe_obj **pipe_ptr_arr, int pipe_arr_size) {
+// Checking each of the pipes to see if a collision was detected --> Ending game if so
+bool check_bird_pipe_collision(FLAPPY_OBJ *p_flappy, PIPE_OBJ **pipe_ptr_arr, int pipe_arr_size) {
     // Checking that the dimensions of each available pipe and flappy don't overlap --> Only checking those that are "in-use"
     for(int index=0; index<pipe_arr_size; index++) {
-        pipe_obj *current_pipe = pipe_ptr_arr[index];
+        PIPE_OBJ *current_pipe = pipe_ptr_arr[index];
         if(current_pipe->in_use) { // Only accessing the pipe if its currently being used in the game
             bool top_pipe_collision_result = simple_check_collision(p_flappy->flappy_dimensions, current_pipe->pipe_dimensions_top); 
             bool bottom_pipe_collision_result = simple_check_collision(p_flappy->flappy_dimensions, current_pipe->pipe_dimensions_bottom);
@@ -206,7 +208,62 @@ bool check_bird_pipe_collision(flappy_obj *p_flappy, pipe_obj **pipe_ptr_arr, in
     return false; // Did not find a collision
 }
 
+// Acting on a valid score
+void flappy_score_func(FLAPPY_OBJ *p_flappy, PIPE_OBJ **pipe_ptr_arr, int pipe_arr_size, int *p_current_game_score) {
+    // Check each pipe --> See if a point should be given
+    for(int index=0; index<pipe_arr_size; index++) {
+        PIPE_OBJ *p_current_pipe = pipe_ptr_arr[index];
 
+        if(p_current_pipe->in_use) { // Avoid checking pipes that aren't being used
+            // NOTE: Potential bug where float is type casted to the value just after flappy x location
+            if(p_flappy->loc_x > ((int)p_current_pipe->f_loc_x + p_current_pipe->size_x)) { 
+                if(!p_current_pipe->point_given) {
+                    *p_current_game_score += 1; // Adding one to the variable saved in the pointer address
+                    p_current_pipe->point_given = true;
+                }
+            }
+        }
+    }
+} 
 
+void render_score(SDL_Renderer *p_renderer, OBJS_TO_CLOSE *p_close_objs, int *p_current_game_score, bool *p_running_flag) {
+    char current_game_score_str[10]; // 10 chars used for max int size (10 chars)
 
+    snprintf(current_game_score_str, 10, "%d", *p_current_game_score); // Saving score to string --> snprintf(str, max_size, format_style, format_var);
+    int num_digits = strlen(current_game_score_str);
+    if(num_digits > 3) { // Stopping if score past 999
+      *p_running_flag = false; 
+    } else {
+      char first_digit_char = 0x0;
+      char second_digit_char = 0x0;
+      char third_digit_char = 0x0;
 
+      if(num_digits > 0) { 
+      first_digit_char = current_game_score_str[num_digits - 1];
+        if(num_digits > 1) { 
+          second_digit_char = current_game_score_str[num_digits - 2]; 
+          if(num_digits > 2) { 
+            third_digit_char = current_game_score_str[num_digits - 3];
+          }
+        }
+      }
+
+      SDL_Texture *first_digit_texture = select_image_from_passed_char(p_close_objs->p_num_images, first_digit_char);
+      if(first_digit_texture != NULL) {
+        SDL_Rect first_digit_rect = (SDL_Rect){50*WINDOW_SCALE, 20*WINDOW_SCALE, 20*WINDOW_SCALE, 20*WINDOW_SCALE}; // {x, y, size_x, size_y}
+        SDL_RenderCopy(p_renderer, first_digit_texture, NULL, &first_digit_rect); 
+      }
+
+      SDL_Texture *second_digit_texture = select_image_from_passed_char(p_close_objs->p_num_images, second_digit_char);
+      if(second_digit_texture != NULL) {
+        SDL_Rect second_digit_rect = (SDL_Rect){30*WINDOW_SCALE, 20*WINDOW_SCALE, 20*WINDOW_SCALE, 20*WINDOW_SCALE}; // {x, y, size_x, size_y}
+        SDL_RenderCopy(p_renderer, second_digit_texture, NULL, &second_digit_rect); 
+      }
+
+      SDL_Texture *third_digit_texture = select_image_from_passed_char(p_close_objs->p_num_images, third_digit_char);
+      if(third_digit_texture != NULL) {
+        SDL_Rect third_digit_rect = (SDL_Rect){10*WINDOW_SCALE, 20*WINDOW_SCALE, 20*WINDOW_SCALE, 20*WINDOW_SCALE}; // {x, y, size_x, size_y}
+        SDL_RenderCopy(p_renderer, third_digit_texture, NULL, &third_digit_rect); // Rendering the bird 
+      }
+    }
+}

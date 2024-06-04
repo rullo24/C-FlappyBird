@@ -7,6 +7,7 @@ project(Flappy_Bird)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/sdl2)
 find_package(SDL2 REQUIRED)
 find_package(SDL2_image REQUIRED)
+find_package(SDL2_ttf REQUIRED)
 
 # Include directories for SDL headers
 include_directories(${SDL2_INCLUDE_DIRS})
